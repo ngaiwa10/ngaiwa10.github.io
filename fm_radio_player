@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FM 广播收听机</title>
+<!-- Tailwind CSS -->
+<script src="https://image.uc.cn/s/uae/g/3n/mos-production/0915/3.4.17.js"></script>
+<!-- Font Awesome -->
+<script src="https://image.uc.cn/s/uae/g/3n/mos-production/fontawesome-free-7.1.0-web/js/all.min.js"></script>
+<link href="https://image.uc.cn/s/uae/g/3n/mos-production/fontawesome-free-7.1.0-web/css/fontawesome.min.css" rel="stylesheet"/>
+<style>
+        /* Custom scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280; 
+        }
+
+        /* Animation for playing state */
+        .playing-indicator span {
+            display: inline-block;
+            width: 3px;
+            height: 10px;
+            background-color: #10b981;
+            margin: 0 1px;
+            animation: bounce 0.5s infinite ease-in-out alternate;
+        }
+        .playing-indicator span:nth-child(2) { animation-delay: 0.1s; }
+        .playing-indicator span:nth-child(3) { animation-delay: 0.2s; }
+        .playing-indicator span:nth-child(4) { animation-delay: 0.3s; }
+
+        @keyframes bounce {
+            0% { height: 5px; opacity: 0.5; }
+            100% { height: 15px; opacity: 1; }
+        }
+
+        /* List item active state transition */
+        .station-item {
+            transition: all 0.2s ease;
+        }
+        .station-item.active {
+            background-color: #374151; /* gray-700 */
+            border-left: 4px solid #10b981; /* emerald-500 */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans h-screen flex flex-col overflow-hidden">
+<!-- Header -->
+<header class="bg-gray-800 shadow-md p-4 z-10 flex justify-between items-center shrink-0">
+<div class="flex items-center gap-3">
+<i class="fa-solid fa-radio text-emerald-500 text-2xl"></i>
+<h1 class="text-xl font-bold tracking-wide">FM 广播收听机</h1>
+</div>
+<div class="text-xs text-gray-400" id="status-text">就绪</div>
+</header>
+<!-- Main Content: Radio List -->
+<main class="flex-1 overflow-y-auto p-2 sm:p-4" id="station-list-container">
+<ul class="space-y-2 max-w-3xl mx-auto" id="station-list">
+<!-- List items will be injected here by JavaScript -->
+</ul>
+</main>
+<!-- Player Controls (Bottom) -->
+<footer class="bg-gray-800 border-t border-gray-700 p-4 shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+<div class="max-w-3xl mx-auto flex flex-col gap-4">
+<!-- Current Station Info -->
+<div class="text-center">
+<h2 class="text-lg font-medium text-emerald-400 truncate px-2" id="current-station-name">
+                    请选择电台
+                </h2>
+<div class="playing-indicator h-4 mt-1 flex justify-center items-center opacity-0 transition-opacity duration-300" id="visualizer">
+<span></span><span></span><span></span><span></span>
+</div>
+</div>
+<!-- Control Buttons -->
+<div class="flex justify-center items-center gap-8 sm:gap-12">
+<!-- Previous Button -->
+<button aria-label="上一个电台" class="group flex flex-col items-center gap-1 text-gray-400 hover:text-white transition-colors focus:outline-none" id="btn-prev">
+<div class="w-12 h-12 rounded-full bg-gray-700 group-hover:bg-gray-600 flex items-center justify-center transition-transform active:scale-95 shadow-lg">
+<i class="fa-solid fa-backward-step text-xl"></i>
+</div>
+<span class="text-xs">上一个</span>
+</button>
+<!-- Play/Pause Button -->
+<button aria-label="播放或暂停" class="group flex flex-col items-center gap-1 text-white focus:outline-none" id="btn-play">
+<div class="w-16 h-16 rounded-full bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center transition-transform active:scale-95 shadow-lg shadow-emerald-900/50">
+<i class="fa-solid fa-play text-2xl pl-1" id="icon-play"></i>
+<i class="fa-solid fa-pause text-2xl hidden" id="icon-pause"></i>
+</div>
+<span class="text-xs font-medium" id="text-play">播放</span>
+</button>
+<!-- Next Button -->
+<button aria-label="下一个电台" class="group flex flex-col items-center gap-1 text-gray-400 hover:text-white transition-colors focus:outline-none" id="btn-next">
+<div class="w-12 h-12 rounded-full bg-gray-700 group-hover:bg-gray-600 flex items-center justify-center transition-transform active:scale-95 shadow-lg">
+<i class="fa-solid fa-forward-step text-xl"></i>
+</div>
+<span class="text-xs">下一个</span>
+</button>
+</div>
+</div>
+</footer>
+<!-- Hidden Audio Element -->
+<audio id="audio-player" preload="none"></audio>
+<script>
+        // Radio Data extracted from the product design document
+        const radioStations = [
+            { name: "徐州音乐广播FM91.9", url: "http://lhttp.qingting.fm/live/4923/64k.mp3" },
+            { name: "江西潮台969", url: "http://lhttp.qingting.fm/live/20500092/64k.mp3" },
+            { name: "吉林市音乐广播", url: "http://lhttp.qingting.fm/live/20211679/64k.mp3" },
+            { name: "冰城1026哈尔滨古典音乐广播", url: "http://lhttp.qingting.fm/live/5022338/64k.mp3" },
+            { name: "台州音乐广播", url: "http://lhttp.qingting.fm/live/1144/64k.mp3" },
+            { name: "流行音乐广播999正青春", url: "http://lhttp.qingting.fm/live/20211620/64k.mp3" },
+            { name: "云南音乐广播", url: "http://lhttp.qingting.fm/live/1929/64k.mp3" },
+            { name: "宁波音乐广播私家车986", url: "http://lhttp.qingting.fm/live/1142/64k.mp3" },
+            { name: "宁夏音乐广播", url: "http://lhttp.qingting.fm/live/15318294/64k.mp3" },
+            { name: "安阳1008音乐广播", url: "http://lhttp.qingting.fm/live/2123/64k.mp3" },
+            { name: "海口WHIZRADIO音乐电台", url: "http://lhttp.qingting.fm/live/20010/64k.mp3" },
+            { name: "邯郸音乐广播", url: "http://lhttp.qingting.fm/live/4601/64k.mp3" },
+            { name: "沧州音乐广播FM103.6", url: "http://lhttp.qingting.fm/live/5021902/64k.mp3" },
+            { name: "FM93.0霸州汽车音乐广播", url: "http://lhttp.qingting.fm/live/20211658/64k.mp3" },
+            { name: "保定城市服务广播乐动1016", url: "http://lhttp.qingting.fm/live/20406/64k.mp3" },
+            { name: "潍坊982广播电台", url: "http://lhttp.qingting.fm/live/4865/64k.mp3" },
+            { name: "90后潮流音悦台", url: "http://lhttp.qingting.fm/live/20207760/64k.mp3" },
+            { name: "盛京FM105.6", url: "http://lhttp.qingting.fm/live/5022520/64k.mp3" },
+            { name: "100.7重庆永川之声", url: "http://lhttp.qingting.fm/live/20210236/64k.mp3" },
+            { name: "乌鲁木齐旅游音乐", url: "http://lhttp.qingting.fm/live/1920/64k.mp3" },
+            { name: "襄阳文化教育广播", url: "http://lhttp.qingting.fm/live/5057/64k.mp3" },
+            { name: "蚌埠广播电视台经典104.2", url: "http://lhttp.qingting.fm/live/20152/64k.mp3" },
+            { name: "新闻听天下", url: "http://lhttp.qingting.fm/live/20500169/64k.mp3" },
+            { name: "怀集音乐之声", url: "http://lhttp.qingting.fm/live/4804/64k.mp3" },
+            { name: "两广之声音乐台", url: "http://lhttp.qingting.fm/live/20500149/64k.mp3" },
+            { name: "清晨音乐台", url: "http://lhttp.qingting.fm/live/4915/64k.mp3" },
+            { name: "河北音乐广播", url: "http://lhttp.qingting.fm/live/1649/64k.mp3" },
+            { name: "上海流行音乐LoveRadio", url: "http://lhttp.qingting.fm/live/273/64k.mp3" },
+            { name: "江苏经典流行音乐", url: "http://lhttp.qingting.fm/live/4938/64k.mp3" },
+            { name: "广东音乐之声", url: "http://lhttp.qingting.fm/live/1260/64k.mp3" },
+            { name: "上海动感101", url: "http://lhttp.qingting.fm/live/274/64k.mp3" },
+            { name: "怀旧好声音", url: "http://lhttp.qingting.fm/live/1223/64k.mp3" },
+            { name: "哈尔滨音乐广播", url: "http://lhttp.qingting.fm/live/839/64k.mp3" },
+            { name: "苏州音乐广播", url: "http://lhttp.qingting.fm/live/2803/64k.mp3" },
+            { name: "959年代音乐怀旧好声音", url: "http://lhttp.qingting.fm/live/5021381/64k.mp3" },
+            { name: "动听音乐台", url: "http://lhttp.qingting.fm/live/5022107/64k.mp3" },
+            { name: "500首华语经典", url: "http://lhttp.qingting.fm/live/5022308/64k.mp3" },
+            { name: "北京音乐广播", url: "http://lhttp.qingting.fm/live/332/64k.mp3" },
+            { name: "954汽车音乐广播", url: "http://lhttp.qingting.fm/live/1936/64k.mp3" },
+            { name: "深圳飞扬971", url: "http://lhttp.qingting.fm/live/1271/64k.mp3" },
+            { name: "950广西音乐台", url: "http://lhttp.qingting.fm/live/4875/64k.mp3" },
+            { name: "厦门音乐广播", url: "http://lhttp.qingting.fm/live/1739/64k.mp3" },
+            { name: "欧美音乐88.7", url: "http://lhttp.qingting.fm/live/15318703/64k.mp3" },
+            { name: "无锡音乐广播", url: "http://lhttp.qingting.fm/live/2779/64k.mp3" },
+            { name: "四川城市之音", url: "http://lhttp.qingting.fm/live/1111/64k.mp3" },
+            { name: "陕西音乐广播", url: "http://lhttp.qingting.fm/live/4873/64k.mp3" },
+            { name: "崂山921", url: "http://lhttp.qingting.fm/live/20212426/64k.mp3" },
+            { name: "长沙101.7城市之声", url: "http://lhttp.qingting.fm/live/4237/64k.mp3" },
+            { name: "上海经典947", url: "http://lhttp.qingting.fm/live/267/64k.mp3" },
+            { name: "湖北经典音乐广播", url: "http://lhttp.qingting.fm/live/1296/64k.mp3" },
+            { name: "成都年代音乐怀旧好声音", url: "http://lhttp.qingting.fm/live/20211686/64k.mp3" },
+            { name: "山东经典音乐广播", url: "http://lhttp.qingting.fm/live/20240/64k.mp3" },
+            { name: "江苏音乐广播Play897", url: "http://lhttp.qingting.fm/live/4936/64k.mp3" },
+            { name: "杭州90.7", url: "http://lhttp.qingting.fm/live/15318146/64k.mp3" },
+            { name: "长春广播电视台 88.0", url: "http://lhttp.qingting.fm/live/4850/64k.mp3" },
+            { name: "星河音乐", url: "http://lhttp.qingting.fm/live/20210755/64k.mp3" },
+            { name: "江西音乐广播", url: "http://lhttp.qingting.fm/live/1802/64k.mp3" },
+            { name: "广东广播电视台珠江之声", url: "http://lhttp.qingting.fm/live/470/64k.mp3" },
+            { name: "内蒙古音乐之声", url: "http://lhttp.qingting.fm/live/1886/64k.mp3" },
+            { name: "88.6长沙音乐广播", url: "http://lhttp.qingting.fm/live/20847/64k.mp3" },
+            { name: "楚天音乐广播", url: "http://lhttp.qingting.fm/live/1289/64k.mp3" },
+            { name: "重庆音乐广播", url: "http://lhttp.qingting.fm/live/647/64k.mp3" },
+            { name: "年代音乐1022", url: "http://lhttp.qingting.fm/live/20500066/64k.mp3" },
+            { name: "武安融媒综合广播", url: "http://lhttp.qingting.fm/live/5022474/64k.mp3" },
+            { name: "南宁经典1049", url: "http://lhttp.qingting.fm/live/20769/64k.mp3" },
+            { name: "惠州音乐广播", url: "http://lhttp.qingting.fm/live/5021523/64k.mp3" },
+            { name: "黑龙江音乐广播", url: "http://lhttp.qingting.fm/live/4969/64k.mp3" },
+            { name: "嘉兴音乐广播", url: "http://lhttp.qingting.fm/live/1136/64k.mp3" },
+            { name: "80后音悦台", url: "http://lhttp.qingting.fm/live/20207761/64k.mp3" },
+            { name: "经典983电台", url: "http://lhttp.qingting.fm/live/20211575/64k.mp3" },
+            { name: "西安音乐广播", url: "http://lhttp.qingting.fm/live/1612/64k.mp3" },
+            { name: "武汉经典音乐广播", url: "http://lhttp.qingting.fm/live/1297/64k.mp3" },
+            { name: "怀旧音乐广播895", url: "http://lhttp.qingting.fm/live/20211619/64k.mp3" },
+            { name: "定州交通音乐广播", url: "http://lhttp.qingting.fm/live/20211638/64k.mp3" },
+            { name: "好听 1055", url: "http://lhttp.qingting.fm/live/4885/64k.mp3" },
+            { name: "南通音乐广播", url: "http://lhttp.qingting.fm/live/21275/64k.mp3" },
+            { name: "1003温州音乐之声", url: "http://lhttp.qingting.fm/live/1149/64k.mp3" },
+            { name: "济南音乐广播88.7", url: "http://lhttp.qingting.fm/live/1671/64k.mp3" },
+            { name: "就爱927 Love Radio", url: "http://lhttp.qingting.fm/live/1831/64k.mp3" },
+            { name: "AsiaFM 亚洲音乐台", url: "http://lhttp.qingting.fm/live/5022405/64k.mp3" },
+            { name: "89.3芒果音乐台", url: "http://lhttp.qingting.fm/live/4979/64k.mp3" },
+            { name: "亚洲音乐成都FM96.5", url: "http://lhttp.qingting.fm/live/4581/64k.mp3" },
+            { name: "1047 Nice FM", url: "http://lhttp.qingting.fm/live/20033/64k.mp3" },
+            { name: "常州音乐广播", url: "http://lhttp.qingting.fm/live/2799/64k.mp3" },
+            { name: "AsiaFM HD音乐台", url: "http://lhttp.qingting.fm/live/15318341/64k.mp3" },
+            { name: "FM102.2亲子智慧电台", url: "http://lhttp.qingting.fm/live/4930/64k.mp3" },
+            { name: "察布查尔FM99.5", url: "http://lhttp.qingting.fm/live/5022610/64k.mp3" },
+            { name: "国际新闻", url: "http://lhttp.qingting.fm/live/5021278/64k.mp3" },
+            { name: "新闻听天下", url: "http://lhttp.qingting.fm/live/5021279/64k.mp3" }
+        ];
+
+        // State Management
+        let currentIndex = -1; // -1 means no station selected initially
+        let isPlaying = false;
+        
+        // DOM Elements
+        const audioPlayer = document.getElementById('audio-player');
+        const stationListEl = document.getElementById('station-list');
+        const currentStationNameEl = document.getElementById('current-station-name');
+        const btnPlay = document.getElementById('btn-play');
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        const iconPlay = document.getElementById('icon-play');
+        const iconPause = document.getElementById('icon-pause');
+        const textPlay = document.getElementById('text-play');
+        const visualizer = document.getElementById('visualizer');
+        const statusText = document.getElementById('status-text');
+
+        // Initialize the list
+        function initList() {
+            stationListEl.innerHTML = '';
+            radioStations.forEach((station, index) => {
+                const li = document.createElement('li');
+                li.className = 'station-item bg-gray-800 rounded-lg p-3 cursor-pointer hover:bg-gray-700 flex justify-between items-center group';
+                li.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0 text-gray-400 group-hover:text-emerald-400 transition-colors">
+                            <i class="fa-solid fa-music text-sm"></i>
+                        </div>
+                        <span class="truncate text-sm sm:text-base font-medium text-gray-200 group-hover:text-white">${station.name}</span>
+                    </div>
+                    <div class="status-icon text-emerald-500 opacity-0 transition-opacity">
+                        <i class="fa-solid fa-volume-high"></i>
+                    </div>
+                `;
+                li.onclick = () => selectStation(index);
+                stationListEl.appendChild(li);
+            });
+        }
+
+        // Update UI for the active station in the list
+        function updateListUI() {
+            const items = stationListEl.children;
+            for (let i = 0; i < items.length; i++) {
+                const icon = items[i].querySelector('.status-icon');
+                if (i === currentIndex) {
+                    items[i].classList.add('active');
+                    items[i].classList.remove('bg-gray-800');
+                    icon.classList.remove('opacity-0');
+                    // Scroll to the active item
+                    items[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    items[i].classList.remove('active');
+                    items[i].classList.add('bg-gray-800');
+                    icon.classList.add('opacity-0');
+                }
+            }
+        }
+
+        // Update Player Control UI
+        function updatePlayerUI() {
+            const station = radioStations[currentIndex];
+            if (station) {
+                currentStationNameEl.textContent = station.name;
+            }
+
+            if (isPlaying) {
+                iconPlay.classList.add('hidden');
+                iconPause.classList.remove('hidden');
+                textPlay.textContent = "暂停";
+                visualizer.classList.remove('opacity-0');
+                statusText.textContent = "正在播放";
+            } else {
+                iconPlay.classList.remove('hidden');
+                iconPause.classList.add('hidden');
+                textPlay.textContent = "播放";
+                visualizer.classList.add('opacity-0');
+                statusText.textContent = "已暂停";
+            }
+        }
+
+        // Select a station
+        function selectStation(index) {
+            if (index < 0 || index >= radioStations.length) return;
+            
+            // If clicking the same station, just toggle play/pause
+            if (currentIndex === index) {
+                togglePlay();
+                return;
+            }
+
+            currentIndex = index;
+            const station = radioStations[currentIndex];
+            
+            // Load new source
+            audioPlayer.src = station.url;
+            audioPlayer.load();
+            
+            // Auto play on selection
+            playAudio();
+            
+            updateListUI();
+            updatePlayerUI();
+        }
+
+        // Play Logic
+        function playAudio() {
+            if (currentIndex === -1) {
+                // If no station selected, select the first one
+                selectStation(0);
+                return;
+            }
+
+            const playPromise = audioPlayer.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.then(_ => {
+                    isPlaying = true;
+                    updatePlayerUI();
+                })
+                .catch(error => {
+                    console.error("Playback failed:", error);
+                    isPlaying = false;
+                    updatePlayerUI();
+                    statusText.textContent = "加载失败或被拦截";
+                });
+            }
+        }
+
+        // Pause Logic
+        function pauseAudio() {
+            audioPlayer.pause();
+            isPlaying = false;
+            updatePlayerUI();
+        }
+
+        // Toggle Play/Pause
+        function togglePlay() {
+            if (currentIndex === -1) {
+                selectStation(0);
+            } else {
+                if (isPlaying) {
+                    pauseAudio();
+                } else {
+                    playAudio();
+                }
+            }
+        }
+
+        // Next Station
+        function nextStation() {
+            let nextIndex = currentIndex + 1;
+            if (nextIndex >= radioStations.length) {
+                nextIndex = 0; // Loop back to start
+            }
+            selectStation(nextIndex);
+        }
+
+        // Previous Station
+        function prevStation() {
+            let prevIndex = currentIndex - 1;
+            if (prevIndex < 0) {
+                prevIndex = radioStations.length - 1; // Loop to end
+            }
+            selectStation(prevIndex);
+        }
+
+        // Event Listeners
+        btnPlay.addEventListener('click', togglePlay);
+        btnNext.addEventListener('click', nextStation);
+        btnPrev.addEventListener('click', prevStation);
+
+        // Audio Event Listeners for state sync
+        audioPlayer.addEventListener('playing', () => {
+            isPlaying = true;
+            updatePlayerUI();
+        });
+
+        audioPlayer.addEventListener('pause', () => {
+            isPlaying = false;
+            updatePlayerUI();
+        });
+
+        audioPlayer.addEventListener('ended', () => {
+            // Auto play next if current stream ends (rare for live radio, but possible for clips)
+            nextStation();
+        });
+
+        audioPlayer.addEventListener('error', (e) => {
+            console.error("Audio Error:", e);
+            statusText.textContent = "信号连接错误";
+            isPlaying = false;
+            updatePlayerUI();
+        });
+
+        audioPlayer.addEventListener('waiting', () => {
+            statusText.textContent = "缓冲中...";
+        });
+
+        // Initialize App
+        initList();
+
+    </script>
+</body>
+</html>
